@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+tessdata/*.traineddata
+tessdata/*.part
+.DS_Store
+/data/
+models/*.task
+models/*.tflite
+models/*.part
+datasets/

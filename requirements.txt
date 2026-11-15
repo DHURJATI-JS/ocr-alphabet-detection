@@ -1,0 +1,31 @@
+# Web server
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-socketio>=5.11
+jinja2>=3.1
+python-dotenv>=1.0
+httpx>=0.27            # LLM arbiter client (also used by the test client)
+
+# Imaging (opencv-contrib-python, not -headless: it is what mediapipe depends on, and the
+# two packages must not be installed side by side - they overwrite each other's cv2)
+numpy>=1.26
+opencv-contrib-python>=4.10
+pillow>=10.1
+
+# Hand-sign mode: hand landmark detection
+mediapipe>=0.10.30
+
+# Primary OCR: Tesseract compiled into the wheel (no system install), plus the
+# pytesseract CLI wrapper as a fallback when a system `tesseract` is installed instead.
+tesserocr>=2.7
+pytesseract>=0.3.10
+
+# Secondary OCR, per platform
+pyobjc-framework-Vision>=10.0 ; sys_platform == "darwin"
+winrt-runtime>=2.0 ; sys_platform == "win32"
+winrt-Windows.Foundation>=2.0 ; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=2.0 ; sys_platform == "win32"
+winrt-Windows.Globalization>=2.0 ; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging>=2.0 ; sys_platform == "win32"
+winrt-Windows.Media.Ocr>=2.0 ; sys_platform == "win32"
+winrt-Windows.Storage.Streams>=2.0 ; sys_platform == "win32"

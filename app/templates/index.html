@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alphabet OCR</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body class="mode-{{ 'sign' if defaults.mode == 'sign' else 'ocr' }}">
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">Aa</span>
+    <div>
+      <h1>Alphabet OCR</h1>
+      <p class="subtitle">
+        <span class="sign-only">Sign a letter with your hand &mdash; it gets typed below.</span>
+        <span class="ocr-only">Show a printed letter to the webcam &mdash; it gets typed below.</span>
+      </p>
+    </div>
+  </div>
+  <div class="status-row">
+    <span id="conn" class="pill pill-off" title="Socket.IO connection">offline</span>
+    <div id="engine-chips" class="chips">
+      {% for role, info in engines.items() if info %}
+        <span class="chip {{ 'chip-ok' if info.available else 'chip-off' }}"
+              title="{{ info.detail if info.available else info.reason }}">
+          {{ info.label }}<small>{{ role }}</small>
+        </span>
+      {% endfor %}
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <!-- Camera ------------------------------------------------------------ -->
+  <section class="card camera-card">
+    <div class="mode-switch" role="radiogroup" aria-label="What to recognise">
+      <label><input type="radio" name="mode-radio" value="sign" {{ '' if engines.hands.available else 'disabled' }}>
+        ✋ Hand signs</label>
+      <label><input type="radio" name="mode-radio" value="letter"> 🔤 Printed letter</label>
+      <label><input type="radio" name="mode-radio" value="text"> 📝 Printed words</label>
+    </div>
+    <div id="stage" class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="placeholder" class="placeholder">
+        <p id="placeholder-text">Camera is off</p>
+        <button id="start-btn-inline" class="btn btn-primary" type="button">Start camera</button>
+      </div>
+      <div id="rec-banner" class="rec-banner" hidden></div>
+    </div>
+    <div class="toolbar">
+      <button id="start-btn" class="btn btn-primary" type="button">Start camera</button>
+      <select id="camera-select" aria-label="Camera" disabled><option value="">Default camera</option></select>
+      <label class="toggle"><input id="mirror" type="checkbox"> Mirror</label>
+      <label class="range-label ocr-only">Guide box
+        <input id="roi" type="range" min="30" max="95" value="60">
+      </label>
+    </div>
+    <div class="stats">
+      <span>FPS <b id="stat-fps">0</b></span>
+      <span>Round trip <b id="stat-rtt">–</b></span>
+      <span>Server <b id="stat-ocr">–</b></span>
+      <span class="sign-only">Hands <b id="stat-hands">0</b></span>
+      <span id="stat-msg" class="muted"></span>
+    </div>
+  </section>
+
+  <!-- Detection + output ---------------------------------------------------- -->
+  <div class="side">
+    <section class="card detect-card">
+      <div class="big-letter-wrap">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-track" cx="60" cy="60" r="54"/>
+          <circle id="ring" class="ring-fill" cx="60" cy="60" r="54"/>
+        </svg>
+        <div id="big-letter" class="big-letter">–</div>
+      </div>
+      <div class="detect-meta">
+        <div class="meta-line"><span class="muted">From</span> <b id="best-engine">–</b></div>
+        <div class="meta-line"><span class="muted">Confidence</span> <b id="best-conf">–</b></div>
+        <div class="confbar"><div id="confbar-fill"></div></div>
+        <p id="hint" class="hint"></p>
+      </div>
+      <table class="readings">
+        <thead><tr><th>Source</th><th>Read</th><th>Conf</th><th>ms</th></tr></thead>
+        <tbody id="readings"><tr><td colspan="4" class="muted">No frames yet</td></tr></tbody>
+      </table>
+      <img id="debug-img" class="debug-img" alt="What the OCR engines saw" hidden>
+    </section>
+
+    <section class="card output-card">
+      <label for="output" class="card-title">Typed letters</label>
+      <input id="output" class="output" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Detected letters appear here…">
+      <div class="toolbar">
+        <button class="btn" type="button" id="btn-space">Space</button>
+        <button class="btn" type="button" id="btn-back">⌫ Backspace</button>
+        <button class="btn" type="button" id="btn-clear">Clear</button>
+        <button class="btn" type="button" id="btn-copy">Copy</button>
+        <button class="btn btn-primary" type="button" id="btn-speak" title="Read the text aloud">🔊 Speak</button>
+        <label class="toggle push-right"><input id="autotype" type="checkbox" checked> Auto-type</label>
+      </div>
+      <div class="toolbar sign-only">
+        <label class="toggle"><input id="auto-space" type="checkbox" checked>
+          Space when hands are lowered for 2 s</label>
+        <label class="toggle"><input id="speak-words" type="checkbox"> Read each word aloud</label>
+      </div>
+      <div id="history" class="history" aria-label="Recently typed"></div>
+    </section>
+
+    <!-- Teach signs ----------------------------------------------------------- -->
+    <section class="card teach-card sign-only">
+      <div class="teach-head">
+        <h2 class="card-title">Teach your signs</h2>
+        <span id="teach-total" class="muted"></span>
+      </div>
+      <p class="hint">
+        For the best accuracy, teach the app <b>your</b> signs: press <b>Teach all letters…</b>
+        and sign each letter when asked (about 6 s per letter), moving your hand a little.
+        Taught signs take priority over the trained ISL / ASL recogniser. Keep both hands in
+        view for two-handed signs; those letters are marked <b>2✋</b>.
+      </p>
+      <div id="letter-grid" class="letter-grid">
+        {% for L in letters %}
+          <button type="button" class="letter-btn" data-letter="{{ L }}">{{ L }}<small></small></button>
+        {% endfor %}
+      </div>
+      <div class="toolbar">
+        <button id="teach-record" class="btn btn-primary" type="button">Record A</button>
+        <label class="range-label">Samples
+          <select id="teach-samples">
+            <option>30</option><option selected>60</option><option>100</option>
+          </select>
+        </label>
+        <button id="teach-guided" class="btn" type="button" title="Walks through A-Z, recording each letter">Teach all letters…</button>
+        <button id="teach-delete" class="btn" type="button">Delete A</button>
+        <button id="teach-clear" class="btn btn-danger push-right" type="button">Clear all</button>
+      </div>
+      <div class="teach-progress" hidden><div id="teach-progress-fill"></div></div>
+    </section>
+
+    <section class="card settings-card">
+      <h2 class="card-title">Settings</h2>
+      <div class="settings-grid">
+        <label class="sign-only">Sign alphabet
+          <select data-opt="alphabet">
+            <option value="isl" {{ '' if engines.hands.alphabets.isl else 'disabled' }}>ISL &mdash; Indian Sign Language</option>
+            <option value="asl">ASL &mdash; American Sign Language</option>
+            <option value="custom">Only my taught signs</option>
+          </select>
+        </label>
+        <label class="sign-only">Hands
+          <select data-opt="hands">
+            <option value="2">Two hands (two-handed signs)</option>
+            <option value="1">One hand (ignore the other)</option>
+          </select>
+        </label>
+        {% set sec = engines.secondary %}
+        {% set sec_ok = sec and sec.available %}
+        {% set sec_name = sec.label if sec else "platform OCR" %}
+        <label class="ocr-only">Engines
+          <select data-opt="strategy">
+            <option value="consensus" {{ '' if sec_ok else 'disabled' }}>Tesseract + {{ sec_name }} (every frame)</option>
+            <option value="fallback" {{ '' if sec_ok else 'disabled' }}>Tesseract, {{ sec_name }} when unsure</option>
+            <option value="primary">Tesseract only</option>
+            <option value="secondary" {{ '' if sec_ok else 'disabled' }}>{{ sec_name }} only</option>
+          </select>
+          {% if not sec_ok %}
+            <small class="muted" title="{{ sec.reason if sec else 'no platform OCR on this OS' }}">
+              {{ sec_name }} not available here &mdash; using Tesseract alone</small>
+          {% endif %}
+        </label>
+        <label>Letter case
+          <select data-opt="case">
+            <option value="upper">UPPERCASE</option>
+            <option value="lower">lowercase</option>
+            <option value="auto">As detected</option>
+          </select>
+        </label>
+        <label><span>Hold frames <output data-for="hold_frames"></output></span>
+          <input type="range" data-opt="hold_frames" min="1" max="10" step="1">
+        </label>
+        <label class="ocr-only"><span>Min confidence <output data-for="min_confidence"></output></span>
+          <input type="range" data-opt="min_confidence" min="0" max="1" step="0.05">
+        </label>
+        <label class="sign-only"><span>Min confidence <output data-for="sign_min_confidence"></output></span>
+          <input type="range" data-opt="sign_min_confidence" min="0" max="1" step="0.05">
+        </label>
+        <label><span>Frames / second <output id="fps-out"></output></span>
+          <input id="fps" type="range" min="1" max="15" step="1" value="10">
+        </label>
+        <label class="toggle ocr-only"><input type="checkbox" data-opt="llm_arbiter"
+          {{ '' if engines.llm else 'disabled' }}> LLM arbiter for unsure letters
+          {% if not engines.llm %}<small class="muted">(set LLM_BASE_URL in .env)</small>{% endif %}
+        </label>
+        <label class="toggle ocr-only"><input type="checkbox" data-opt="ignore_faces"> Only read letters on paper
+          (ignore faces, mouths, skin and background)</label>
+        <label class="toggle ocr-only"><input type="checkbox" data-opt="debug_image"> Show what OCR sees</label>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script id="app-config" type="application/json">{{ {"defaults": defaults, "engines": engines} | tojson }}</script>
+<script src="{{ url_for('static', path='vendor/socket.io.min.js') }}"></script>
+<script src="{{ url_for('static', path='app.js') }}"></script>
+</body>
+</html>

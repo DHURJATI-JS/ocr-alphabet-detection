@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest>=8
+python-socketio[asyncio_client]>=5.11   # aiohttp, for the end-to-end socket test
+
+# Training the sign recognisers (scripts/train_signs.py) - not needed to run the app
+scikit-learn>=1.5
+pyarrow>=15

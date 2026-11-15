@@ -1,0 +1,5 @@
+Hand photos from the MediaPipe sample assets (Apache License 2.0):
+https://storage.googleapis.com/mediapipe-tasks/gesture_recognizer/{victory,pointing_up,thumbs_up,thumbs_down}.jpg
+https://storage.googleapis.com/mediapipe-tasks/hand_landmarker/woman_hands.jpg
+https://storage.googleapis.com/mediapipe-assets/portrait.jpg
+https://storage.googleapis.com/mediapipe-assets/business-person.png (resized, saved as business_person.jpg)
